@@ -17,8 +17,6 @@ class DataPreprocessor:
         Return:
             dict: Two dictionaries of DataFrames, each corresponding to a specific index.
         """
-        dataframes_index = {}
-        dataframes_stocks = {}
         dataframes = {}
 
         # Get list of all CSV files in the specified directory
@@ -29,10 +27,19 @@ class DataPreprocessor:
                 # Process each CSV file and extract data
                 df = self._process_single_csv(file_path)
 
+                '''# Format 'Date' column as datetime, and spot columns as float
+                df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y')
+                df.iloc[:, 1:] = df.iloc[:, 1:].astype(float)'''
+
                 # Store DataFrame by index name
                 index_name = file_name.rsplit('.')[0]
                 df_index = df.iloc[:,:2]
-                df_stocks = pd.merge([df['Date'], df.iloc[:,2:]])
+
+                stock_names = list(df.columns[2:])
+                df_stocks = {stock_name : df[['Date', stock_name]] for stock_name in stock_names}
+                #df_stocks = pd.concat([df['Date'], df.iloc[:, 2:]], axis=1)
+
+
                 dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
 
         return dataframes
@@ -55,7 +62,7 @@ class DataPreprocessor:
         spots = raw_df.rename(columns = raw_df.iloc[0]).drop(raw_df.index[0])
         spots.columns = ['Date' if col % 2 == 0 else name for col, name in enumerate(spots.columns)]
 
-        # Format spot (non-date) columns as float
+        # Replace ',' by '.' before formating spot (non-date) columns as float
         spot_columns = [col for col in spots.columns if col != 'Date']
         spots.loc[:, spot_columns] = spots.loc[:, spot_columns].replace(',', '.', regex=True).astype(float)
 
@@ -69,5 +76,9 @@ class DataPreprocessor:
 
         # Format 'Date' column as datetime
         spot['Date'] = pd.to_datetime(spot['Date'], format='%d/%m/%Y')
+
+        # Sort DataFrame by 'Date', and reset index
+        spot.sort_values(by='Date', inplace=True)
+        spot = spot.reset_index(drop=True)
 
         return spot
