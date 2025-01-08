@@ -15,8 +15,10 @@ class DataPreprocessor:
         """
         Process all CSV files in the directory to create DataFrames for each index.
         Return:
-            dict: A dictionary of DataFrames, each corresponding to a specific index.
+            dict: Two dictionaries of DataFrames, each corresponding to a specific index.
         """
+        dataframes_index = {}
+        dataframes_stocks = {}
         dataframes = {}
 
         # Get list of all CSV files in the specified directory
@@ -29,7 +31,9 @@ class DataPreprocessor:
 
                 # Store DataFrame by index name
                 index_name = file_name.rsplit('.')[0]
-                dataframes[index_name] = df
+                df_index = df.iloc[:,:2]
+                df_stocks = pd.merge([df['Date'], df.iloc[:,2:]])
+                dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
 
         return dataframes
 
