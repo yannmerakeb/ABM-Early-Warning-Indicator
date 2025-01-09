@@ -30,13 +30,13 @@ class Return:
             np.array or dict : returns
         '''
         if index:
-            return self.cumulative_returns(index).diff()[1:].reshape(-1,1)
+            return self.cumulative_returns(index).diff()[1:].to_numpy().reshape(-1,1)
         else:
             cum_returns = self.cumulative_returns(index=False)
 
             self.stock_returns_dict = {}
             for stock in self.stock_names:
-                self.stock_returns_dict[stock] = cum_returns[stock].diff()[1:]
+                self.stock_returns_dict[stock] = cum_returns[stock].diff()[1:].to_numpy().reshape(-1,1)
             return self.stock_returns_dict
 
     @property
@@ -49,7 +49,7 @@ class Return:
         cst_ones = np.ones((len(self.index[1:]), 1))
         self.t = self.index.index[1:].to_numpy().reshape(-1, 1)
         X = np.column_stack((cst_ones, self.t))
-        y = self.cumulative_returns(index=True).to_numpy().reshape(-1,1)
+        y = self.cumulative_returns(index=True).iloc[1:].to_numpy().reshape(-1,1)
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
 
