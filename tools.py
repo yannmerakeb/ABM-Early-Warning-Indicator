@@ -9,7 +9,7 @@ class Data:
         self.stocks = dict_data['stocks']
 
         # Get the names of the indexes and stocks
-        self.index_name = self.index.columns[1]
+        #self.index_name = self.index.columns[1]
         self.stock_names = list(self.stocks.keys())
 
 
@@ -25,12 +25,12 @@ class Return(Data):
 
     def cumulative_returns(self, index: bool):
         if index:
-            ratio = (self.index.iloc[:,1] / self.index.iloc[0,1]).astype(float)
+            ratio = (self.index / self.index[0]).astype(float)
             return np.log(ratio)
         else:
             self.stock_cum_returns_dict = {}
             for stock in self.stock_names:
-                ratio = (self.stocks[stock].iloc[:,1] / self.stocks[stock].iloc[0,1]).astype(float)
+                ratio = (self.stocks[stock] / self.stocks[stock][0]).astype(float)
                 self.stock_cum_returns_dict[stock] = np.log(ratio)
             return self.stock_cum_returns_dict
 
@@ -60,9 +60,9 @@ class Return(Data):
             np.array : beta
         '''
         cst_ones = np.ones((len(self.index[1:]), 1))
-        t = self.index.index[1:].to_numpy().reshape(-1, 1)
+        t = np.arange(len(self.index[1:]))
         X = np.column_stack((cst_ones, t))
-        y = self.cumulative_returns(index=True).iloc[1:].to_numpy().reshape(-1,1)
+        y = self.cumulative_returns(index=True)[1:]
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
 
@@ -75,12 +75,13 @@ class Return(Data):
         '''
         #stock_returns = self.returns(index=False)
         # Number of days, including 0 for the first day (not detrended)
-        t = self.index.index.to_numpy().reshape(-1, 1)
+        t = np.arange(len(self.index))
+        # t = self.index.index.to_numpy().reshape(-1, 1)
         detrend_factor = np.exp(-self.avg_daily_return[1] * t)
 
         self.detrended_stock_returns_dict = {}
         for stock in self.stock_names:
-            self.detrended_stock_returns_dict[stock] = pd.concat([self.stocks[stock]['Date'], self.stocks[stock].iloc[:,1:] * detrend_factor], axis=1)
+            self.detrended_stock_returns_dict[stock] = self.stocks[stock] * detrend_factor
         return self.detrended_stock_returns_dict
 
 class SentimentIndex(Data):

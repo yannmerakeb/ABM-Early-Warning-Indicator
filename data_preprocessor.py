@@ -34,16 +34,18 @@ class DataPreprocessor:
                 # Store DataFrame by index name
                 index_name = file_name.rsplit('.')[0]
                 df_index = df.iloc[:,:2]
-                mat_index = df_index.iloc[:,1].to_numpy()
+
 
                 stock_names = list(df.columns[2:])
                 #df_stocks = {stock_name : df[['Date', stock_name]] for stock_name in stock_names}
+
+                mat_index = df_index.iloc[:, 1].to_numpy()
                 mat_stocks = {stock_name : df[stock_name].to_numpy() for stock_name in stock_names}
 
                 dataframes[index_name] = {'index': mat_index, 'stocks': mat_stocks}
                 # dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
 
-        return dataframes
+        return dataframes, df['Date'].to_numpy()
 
     def _process_single_csv(self, file_path):
         """
