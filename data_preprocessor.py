@@ -21,7 +21,7 @@ class DataPreprocessor:
 
         # Get list of all CSV files in the specified directory
         for file_name in tqdm(os.listdir(self.directory_path), desc="Processing CSV files"):
-            if file_name.endswith('.csv'):
+            if file_name.endswith('.csv') and file_name == 'S&P500.csv':
                 file_path = os.path.join(self.directory_path, file_name)
 
                 # Process each CSV file and extract data
@@ -34,13 +34,14 @@ class DataPreprocessor:
                 # Store DataFrame by index name
                 index_name = file_name.rsplit('.')[0]
                 df_index = df.iloc[:,:2]
+                mat_index = df_index.iloc[:,1].to_numpy()
 
                 stock_names = list(df.columns[2:])
-                df_stocks = {stock_name : df[['Date', stock_name]] for stock_name in stock_names}
-                #df_stocks = pd.concat([df['Date'], df.iloc[:, 2:]], axis=1)
+                #df_stocks = {stock_name : df[['Date', stock_name]] for stock_name in stock_names}
+                mat_stocks = {stock_name : df[stock_name].to_numpy() for stock_name in stock_names}
 
-
-                dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
+                dataframes[index_name] = {'index': mat_index, 'stocks': mat_stocks}
+                # dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
 
         return dataframes
 

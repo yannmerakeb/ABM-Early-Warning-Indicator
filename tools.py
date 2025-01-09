@@ -1,14 +1,27 @@
+import pandas as pd
 import numpy as np
 
-class Return:
-    def __init__(self, dict_data : dict):
+
+class Data:
+    def __init__(self, dict_data: dict):
+        # Get the index and stock data
+        self.index = dict_data['index']
+        self.stocks = dict_data['stocks']
+
+        # Get the names of the indexes and stocks
+        self.index_name = self.index.columns[1]
+        self.stock_names = list(self.stocks.keys())
+
+
+class Return(Data):
+    '''def __init__(self, dict_data : dict):
         # Get the index and stock data
         self.index = dict_data['index']
         self.stocks = dict_data['stocks']
 
         # Get the names of the indexes and stocks
         self.index_names = self.index.columns[1]
-        self.stock_names = list(self.stocks.keys())
+        self.stock_names = list(self.stocks.keys())'''
 
     def cumulative_returns(self, index: bool):
         if index:
@@ -47,8 +60,8 @@ class Return:
             np.array : beta
         '''
         cst_ones = np.ones((len(self.index[1:]), 1))
-        self.t = self.index.index[1:].to_numpy().reshape(-1, 1)
-        X = np.column_stack((cst_ones, self.t))
+        t = self.index.index[1:].to_numpy().reshape(-1, 1)
+        X = np.column_stack((cst_ones, t))
         y = self.cumulative_returns(index=True).iloc[1:].to_numpy().reshape(-1,1)
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
@@ -58,13 +71,64 @@ class Return:
         '''
         Detrend stock returns
         Return:
-            Detrended returns = returns * exp(-avg_daily_return * t)
+            dict : Detrended returns = returns * exp(-avg_daily_return * t)
         '''
-        stock_returns = self.returns(index=False)
+        #stock_returns = self.returns(index=False)
+        # Number of days, including 0 for the first day (not detrended)
+        t = self.index.index.to_numpy().reshape(-1, 1)
+        detrend_factor = np.exp(-self.avg_daily_return[1] * t)
 
         self.detrended_stock_returns_dict = {}
         for stock in self.stock_names:
-            self.detrended_stock_returns_dict[stock] = stock_returns[stock] * np.exp(-self.avg_daily_return[1] * self.t)
+            self.detrended_stock_returns_dict[stock] = pd.concat([self.stocks[stock]['Date'], self.stocks[stock].iloc[:,1:] * detrend_factor], axis=1)
         return self.detrended_stock_returns_dict
+
+class SentimentIndex(Data):
+    def __init__(self, dict_data: dict, EMA_window: int = 100):
+        # Exponential Moving Average time window
+        super().__init__(dict_data)
+        self.L = EMA_window
+        # Weight used for the EMA
+        self.W = 2 / (self.L + 1)
+
+    def _EMA_init(self):
+        '''
+        Initialize the EMA, the first value is the SMA
+        Return:
+            dict : initialized EMA
+
+        '''
+        self.EMA_dict = {}
+
+        for stock in self.stock_names:
+            '''ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
+            ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
+            self.EMA_dict[stock] = ema_data'''
+
+            # ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
+            # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
+
+            ema_data = np.array([np.mean(self.stocks[stock].iloc[:self.L, 1])])
+            self.EMA_dict[stock] = ema_data
+
+        return self.EMA_dict
+
+    @property
+    def EMA(self):
+        '''
+        Compute the EMA
+        Return:
+            dict : EMA
+        '''
+        self.EMA_dict = self._EMA_init()
+
+        for stock in self.stock_names:
+            for row in range(self.L + 1, len(self.stocks[stock])):
+                #self.EMA_dict[stock].iloc[row, 1] = self.W * self.stocks[stock].iloc[row,1] + (1 - self.W) * self.EMA_dict[stock].iloc[row-1,1]
+
+                ema = self.W * self.stocks[stock].iloc[row,1] + (1 - self.W) * self.EMA_dict[stock].iloc[row-1,1]
+                self.EMA_dict[stock] = np.append(self.EMA_dict[stock], [ema], axis=0)
+
+        return self.EMA_dict
 
 '''class Graph:'''
