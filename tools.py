@@ -9,9 +9,10 @@ class Data:
         self.stocks = dict_data['stocks']
 
         # Get the names of the indexes and stocks
-        #self.index_name = self.index.columns[1]
         self.stock_names = list(self.stocks.keys())
 
+        # Get the dates
+        self.dates = dict_data['dates']
 
 class Return(Data):
     '''def __init__(self, dict_data : dict):
@@ -53,7 +54,7 @@ class Return(Data):
             return self.stock_returns_dict
 
     @property
-    def avg_daily_return(self) -> np.array:
+    def avg_daily_return(self):
         '''
         OLS regression (cumulative_returns = cst + avg_daily_return * t => y = beta[0] + beta[1] * X)
         Return:
@@ -73,7 +74,6 @@ class Return(Data):
         Return:
             dict : Detrended returns = returns * exp(-avg_daily_return * t)
         '''
-        #stock_returns = self.returns(index=False)
         # Number of days, including 0 for the first day (not detrended)
         t = np.arange(len(self.index))
         # t = self.index.index.to_numpy().reshape(-1, 1)
@@ -92,7 +92,7 @@ class SentimentIndex(Data):
         # Weight used for the EMA
         self.W = 2 / (self.L + 1)
 
-    def _EMA_init(self):
+    def _EMA_init(self) -> dict:
         '''
         Initialize the EMA, the first value is the SMA
         Return:
@@ -109,27 +109,53 @@ class SentimentIndex(Data):
             # ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
             # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
 
-            ema_data = np.array([np.mean(self.stocks[stock].iloc[:self.L, 1])])
+            ema_data = np.full(len(self.stocks[stock]), np.nan)
+            ema_data[self.L] = np.mean(self.stocks[stock][:self.L])
             self.EMA_dict[stock] = ema_data
 
         return self.EMA_dict
 
     @property
-    def EMA(self):
+    def pessimistic_state(self) -> dict:
         '''
-        Compute the EMA
+        Compute the EMA by stock, and then the pessimistic state (binary)
         Return:
-            dict : EMA
+            dict : pessimistic state by stock
         '''
         self.EMA_dict = self._EMA_init()
+        self.pessimistic_state_dict = {}
 
         for stock in self.stock_names:
             for row in range(self.L + 1, len(self.stocks[stock])):
-                #self.EMA_dict[stock].iloc[row, 1] = self.W * self.stocks[stock].iloc[row,1] + (1 - self.W) * self.EMA_dict[stock].iloc[row-1,1]
+                # Exponential Moving Average
+                ema = self.W * self.stocks[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
+                self.EMA_dict[stock][row] = ema
 
-                ema = self.W * self.stocks[stock].iloc[row,1] + (1 - self.W) * self.EMA_dict[stock].iloc[row-1,1]
-                self.EMA_dict[stock] = np.append(self.EMA_dict[stock], [ema], axis=0)
+            # Pessimistic state
+            pessimistic_state = self.EMA_dict[stock] < self.stocks[stock]
+            self.pessimistic_state_dict[stock] = pessimistic_state
 
-        return self.EMA_dict
+        return self.pessimistic_state_dict
 
-'''class Graph:'''
+    @property
+    def sentiment_index(self) -> pd.DataFrame:
+        '''
+        Compute the sentiment index and the daily changes
+        Return:
+            pd.DataFrame : sentiment index
+        '''
+        pessimistic_states = self.pessimistic_state
+        sentiment_index_list = []
+
+        for date_index in range(len(self.index)):
+            agg_pessimistic_state = 0
+            for stock in self.stock_names:
+                agg_pessimistic_state += pessimistic_states[stock][date_index]
+
+            sentiment_index = agg_pessimistic_state / len(self.stock_names)
+            sentiment_index_list.append(sentiment_index)
+
+        sentiment_index_df = pd.concat([self.dates, pd.DataFrame(sentiment_index_list, columns=['Sentiment Index'])], axis=1)
+        sentiment_index_df = sentiment_index_df.iloc[self.L:,:]
+
+        return sentiment_index_df
