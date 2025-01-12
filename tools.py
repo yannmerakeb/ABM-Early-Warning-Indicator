@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
+from data_preprocessor import Data
+from scipy.optimize import minimize
+from scipy.special import gammaln
 
-
-class Data:
+'''class Data:
     def __init__(self, dict_data: dict):
         # Get the index and stock data
         self.index = dict_data['index']
@@ -12,7 +14,7 @@ class Data:
         self.stock_names = list(self.stocks.keys())
 
         # Get the dates
-        self.dates = dict_data['dates']
+        self.dates = dict_data['dates']'''
 
 class Return(Data):
     '''def __init__(self, dict_data : dict):
@@ -132,7 +134,7 @@ class SentimentIndex(Data):
                 self.EMA_dict[stock][row] = ema
 
             # Pessimistic state
-            pessimistic_state = self.EMA_dict[stock] < self.stocks[stock]
+            pessimistic_state = self.stocks[stock] < self.EMA_dict[stock]
             self.pessimistic_state_dict[stock] = pessimistic_state
 
         return self.pessimistic_state_dict
@@ -159,3 +161,53 @@ class SentimentIndex(Data):
         sentiment_index_df = sentiment_index_df.iloc[self.L:,:]
 
         return sentiment_index_df
+
+class Modelling(Data):
+
+    # Unconditional distribution of the sentiment index
+    def beta_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
+        '''
+        Compute the beta log likelihood
+        Return:
+            float : beta log likelihood
+        '''
+        # Parameters
+        e1, e2 = params
+
+        '''# Sentiment index
+        sentiment_index_obj = SentimentIndex(self.dict_data)
+        sentiment_index = sentiment_index_obj.sentiment_index.iloc[:,1].to_numpy()'''
+
+        # Number of observations, which is the number of days in the sentiment index
+        n = len(sentiment_index)
+
+        # Log likelihood
+        sum_inv_B = n * (gammaln(e1 + e2) - gammaln(e1) - gammaln(e2))
+        sum_ln_x = (e1 - 1) * np.sum(np.log(sentiment_index))
+        sum_one_minus_ln_x = (e2 - 1) * np.sum(np.log(1 - sentiment_index))
+        ll = sum_inv_B + sum_ln_x + sum_one_minus_ln_x
+
+        return -ll
+
+    def beta_MLE(self) -> tuple:
+        '''
+        Compute the beta MLE
+        Return:
+            tuple : beta MLE
+        '''
+        # Sentiment index
+        sentiment_index_obj = SentimentIndex(self.dict_data)
+        sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()
+        #sentiment_index = sentiment_index[sentiment_index > 0.95]
+
+        # Clip the sentiment index to avoid log(0) and log(1)
+        epsilon = 1e-10
+        sentiment_index = np.clip(sentiment_index, epsilon, 1 - epsilon)
+
+        params_init = np.array([1, 1])
+        beta_bounds = ((1e-10, None), (1e-10, None))
+        options = {'maxiter': 100000, 'ftol': 1e-10, 'gtol': 1e-10, 'xtol': 1e-10}
+        beta_MLE = minimize(self.beta_log_likelihood, params_init, args=(sentiment_index,),
+                            bounds=beta_bounds, method='L-BFGS-B', options=options)
+
+        return beta_MLE

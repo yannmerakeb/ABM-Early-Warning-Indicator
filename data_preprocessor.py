@@ -2,6 +2,20 @@ import pandas as pd
 import os
 from tqdm import tqdm
 
+class Data:
+    def __init__(self, dict_data: dict):
+        self.dict_data = dict_data
+
+        # Get the index and stock data
+        self.index = dict_data['index']
+        self.stocks = dict_data['stocks']
+
+        # Get the names of the indexes and stocks
+        self.stock_names = list(self.stocks.keys())
+
+        # Get the dates
+        self.dates = dict_data['dates']
+
 class DataPreprocessor:
     def __init__(self, directory_path):
         """
