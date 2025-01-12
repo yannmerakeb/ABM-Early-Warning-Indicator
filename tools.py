@@ -189,25 +189,67 @@ class Modelling(Data):
 
         return -ll
 
-    def beta_MLE(self) -> tuple:
+    def normal_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
         '''
-        Compute the beta MLE
+        Compute the Normal log likelihood
+        Args:
+            params (tuple) : Normal parameters
+            sentiment_index (np.ndarray) : Sentiment index
         Return:
-            tuple : beta MLE
+            float : Normal log likelihood
+        '''
+        # Parameters
+        e1, e2, b = params
+
+        # Mean and standard deviation
+        z_bar = e1 / (e1 + e2)
+        mu = sentiment_index + (e1 + e2) * (z_bar - sentiment_index) * b
+        sigma = np.sqrt(2 * b * (1 - sentiment_index) * sentiment_index)
+
+        # Log likelihood
+        ll = (- 0.5 * np.sum(np.log(2 * np.pi * sigma[:-1] ** 2))
+              - 0.5 * np.sum(((sentiment_index[1:] - mu[:-1]) / sigma[:-1]) ** 2))
+
+        return -ll
+
+    def MLE(self, distribution: str, drop_extreme: float = None) -> tuple:
+        '''
+        Compute the MLE
+        Args:
+            distribution (str) : Distribution to use for the MLE (Normal, Beta)
+            drop_extreme (float) : Drop sentiment index values above this threshold
+        Return:
+            tuple : MLE parameters
         '''
         # Sentiment index
         sentiment_index_obj = SentimentIndex(self.dict_data)
         sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()
-        #sentiment_index = sentiment_index[sentiment_index > 0.95]
+
+        # Drop extreme sentiment index values if specified
+        if drop_extreme:
+            sentiment_index = sentiment_index[sentiment_index <= drop_extreme]
 
         # Clip the sentiment index to avoid log(0) and log(1)
         epsilon = 1e-10
         sentiment_index = np.clip(sentiment_index, epsilon, 1 - epsilon)
 
-        params_init = np.array([1, 1])
-        beta_bounds = ((1e-10, None), (1e-10, None))
+        # Optimization options
         options = {'maxiter': 100000, 'ftol': 1e-10, 'gtol': 1e-10, 'xtol': 1e-10}
-        beta_MLE = minimize(self.beta_log_likelihood, params_init, args=(sentiment_index,),
-                            bounds=beta_bounds, method='L-BFGS-B', options=options)
 
-        return beta_MLE
+        # Maximum Likelihood Estimation
+        if distribution.lower() == 'beta':
+            params_init = np.array([1, 1])
+            bounds = ((1e-10, None), (1e-10, None))
+            MLE = minimize(self.beta_log_likelihood, params_init, args=(sentiment_index,),
+                           bounds=bounds, method='L-BFGS-B', options=options)
+
+        elif distribution.lower() == 'normal':
+            params_init = np.array([1, 1, 1])
+            bounds = ((1e-10, None), (1e-10, None), (1e-10, None))
+            MLE = minimize(self.normal_log_likelihood, params_init, args=(sentiment_index,),
+                           bounds=bounds, method='L-BFGS-B', options=options)
+
+        else:
+            raise ValueError("Distribution not supported")
+
+        return MLE.x
