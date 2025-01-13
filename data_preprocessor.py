@@ -35,7 +35,7 @@ class DataPreprocessor:
 
         # Get list of all CSV files in the specified directory
         for file_name in tqdm(os.listdir(self.directory_path), desc="Processing CSV files"):
-            if file_name.endswith('.csv') and file_name == 'S&P500.csv':
+            if file_name.endswith('.csv') and file_name == 'EuroStoxx600.csv':
                 file_path = os.path.join(self.directory_path, file_name)
 
                 # Process each CSV file and extract data
