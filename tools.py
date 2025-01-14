@@ -7,6 +7,7 @@ from scipy.special import gammaln
 import matplotlib.pyplot as plt
 from scipy.stats import beta, chi2
 
+
 class Return(Data):
     '''def __init__(self, dict_data : dict):
         # Get the index and stock data
@@ -153,7 +154,31 @@ class SentimentIndex(Data):
 
         return sentiment_index_df
 
-    #def autocorrelation(self, params):
+    def autocorrelation(self):
+        '''
+        Compute the autocorrelation function of the sentiment index
+        Return:
+            plt
+        '''
+        # Maximum Likelihood Estimation
+        likelihood_obj = Likelihood(self.dict_data)
+        e1, e2, b = likelihood_obj.MLE('normal', 0.95)[0]
+
+        # Range of lags
+        t = np.arange(100)
+
+        # Autocorrelation function
+        ac_fun = np.exp(-b * (e1 + e2) * t)
+
+        # Plot
+        plt.figure(figsize=(10, 6))
+        plt.plot(t, ac_fun, label='Autocorrelation Function')
+        plt.xlabel('Lag')
+        plt.ylabel('Autocorrelation')
+        plt.title('Autocorrelation Function of the Sentiment Index')
+        plt.legend()
+        plt.show()
+
 
 class Likelihood(Data):
 
@@ -283,7 +308,7 @@ class Likelihood(Data):
         Compute the MLE
         Args:
             distribution (str) : Distribution to use for the MLE (Normal, Beta)
-            drop_extreme (float) : Drop sentiment index values above this threshold
+            drop_extreme (float) : Drop sentiment index values above this threshold (optional)
         Return:
             tuple : MLE parameters
         '''
@@ -318,28 +343,53 @@ class Likelihood(Data):
 
             e1, e2, b = MLE.x
             z_bar = e1 / (e1 + e2)
-            moments = (sentiment_index + (e1 + e2) * (z_bar - sentiment_index) * b,
-                       np.sqrt(2 * b * (1 - sentiment_index) * sentiment_index) ** 2)
+            # moments = (sentiment_index + (e1 + e2) * (z_bar - sentiment_index) * b,
+            #           np.sqrt(2 * b * (1 - sentiment_index) * sentiment_index) ** 2)
 
-            return MLE.x, moments
+            return MLE.x
+            # return MLE.x, moments
 
         else:
             raise ValueError("Distribution not supported")
 
-"""class MonteCarlo(Data):
-    def simulation(self, distribution: str, params: tuple, num_simulations: int = 1000, num_days: int = 252) -> np.ndarray:
+class MonteCarlo(Data):
+    def simulation(self, num_simulations: int = 1000, num_days: int = 252):
         '''
-        Perform Monte Carlo simulation based on the chosen distribution and parameters
+        Perform Monte Carlo simulation based on the Normal distribution and parameters
         Args:
-            distribution (str) : Distribution to use for the simulation (Normal, Beta)
             params (tuple) : Parameters for the distribution
             num_simulations (int) : Number of simulations to run
             num_days (int) : Number of days to simulate
         Return:
             np.ndarray : Simulated paths
         '''
-        if distribution.lower() == 'beta':
-            e1, e2 = params"""
+        likelihood = Likelihood(self.dict_data)
+
+        # mu, var = likelihood.MLE('normal', 0.95)[1]
+        e1, e2, b = likelihood.MLE('normal', 0.95)
+
+        simulated_sentiment_index = np.zeros((num_days, num_simulations))
+        for simul in range(num_simulations):
+            for day in range(1, num_days):
+                simulated_sentiment_index[day, simul] = self._individual_simulation(simulated_sentiment_index[day - 1, simul], e1, e2, b)
+
+        return simulated_sentiment_index
+
+    def _individual_simulation(self, z_t, e1, e2, b):
+        '''
+        Compute the next sentiment index value based on the Normal distribution
+        Args:
+            z_t (float) : Current sentiment index value
+            e1, e2, b (float) : Parameters used to compute the mean and standard deviation of the Normal distribution
+        '''
+        z_bar = e1 / (e1 + e2)
+        mu = z_t + (e1 + e2) * (z_bar - z_t) * b
+        vol = np.sqrt(2 * b * (1 - z_t) * z_t)
+        lambda_t = np.random.randn()
+
+        return z_t + mu + vol * lambda_t
+
+
 
 """class MonteCarlo(Data):
     def simulation(self, distribution: str, params: tuple, num_simulations: int = 500,
