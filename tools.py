@@ -353,11 +353,10 @@ class Likelihood(Data):
             raise ValueError("Distribution not supported")
 
 class MonteCarlo(Data):
-    def simulation(self, num_simulations: int = 1000, num_days: int = 252):
+    def simulation(self, num_simulations: int = 1000, num_days: int = 252) -> np.ndarray:
         '''
         Perform Monte Carlo simulation based on the Normal distribution and parameters
         Args:
-            params (tuple) : Parameters for the distribution
             num_simulations (int) : Number of simulations to run
             num_days (int) : Number of days to simulate
         Return:
@@ -365,13 +364,20 @@ class MonteCarlo(Data):
         '''
         likelihood = Likelihood(self.dict_data)
 
-        # mu, var = likelihood.MLE('normal', 0.95)[1]
+        # Parameters
         e1, e2, b = likelihood.MLE('normal', 0.95)
 
+        # Initialize the simulated sentiment index with zeros
         simulated_sentiment_index = np.zeros((num_days, num_simulations))
+
+        # Simulate the sentiment index
         for simul in range(num_simulations):
             for day in range(1, num_days):
-                simulated_sentiment_index[day, simul] = self._individual_simulation(simulated_sentiment_index[day - 1, simul], e1, e2, b)
+
+                valid_bound_condition = simulated_sentiment_index[day, simul] > 0 and simulated_sentiment_index[day, simul] < 1
+                while not valid_bound_condition:
+                    simulated_sentiment_index[day, simul] = self._individual_simulation(simulated_sentiment_index[day - 1, simul],
+                                                                                        e1, e2, b)
 
         return simulated_sentiment_index
 
@@ -382,80 +388,12 @@ class MonteCarlo(Data):
             z_t (float) : Current sentiment index value
             e1, e2, b (float) : Parameters used to compute the mean and standard deviation of the Normal distribution
         '''
+        # Compute the mean and standard deviation of the Normal distribution
         z_bar = e1 / (e1 + e2)
         mu = z_t + (e1 + e2) * (z_bar - z_t) * b
         vol = np.sqrt(2 * b * (1 - z_t) * z_t)
-        lambda_t = np.random.randn()
 
-        return z_t + mu + vol * lambda_t
+        # Generate a random Brownian increment with size 1
+        lambda_t = np.random.normal(0,1)
 
-
-
-"""class MonteCarlo(Data):
-    def simulation(self, distribution: str, params: tuple, num_simulations: int = 500,
-                   num_days: int = 252) -> np.ndarray:
-        '''
-        Perform Monte Carlo simulation based on the chosen distribution and parameters
-        Args:
-            distribution (str) : Distribution to use for the simulation (Normal, Beta)
-            params (tuple) : Parameters for the distribution
-            num_simulations (int) : Number of simulations to run
-            num_days (int) : Number of days to simulate
-        Return:
-            np.ndarray : Simulated paths
-        '''
-        if distribution.lower() == 'beta':
-            e1, e2 = params
-            # Simuler les rendements à partir de la distribution Beta
-            simulated_returns = np.random.beta(e1, e2,(num_simulations, num_days)) - 0.5  # Ajuste pour centrer autour de 0
-        elif distribution.lower() == 'normal':
-            e1, e2, b = params
-            # Simuler les rendements à partir de la distribution Normale
-            z_bar = e1 / (e1 + e2)
-            mu = z_bar  # moyenne de la distribution normale
-            sigma = np.sqrt(2 * b * (1 - z_bar) * z_bar)  # écart-type basé sur les paramètres
-            simulated_returns = np.random.normal(mu, sigma, (num_simulations, num_days))
-        else:
-            raise ValueError("Distribution not supported")
-
-        return simulated_returns
-
-    def compare_distributions(self, empirical_data, theoretical_params, distribution):
-        # Compute empirical distribution
-        empirical_hist, bins = np.histogram(empirical_data, bins=50, density=True)
-        bin_centers = (bins[:-1] + bins[1:]) / 2
-
-        # Generate theoretical distribution
-        if distribution.lower() == 'beta':
-            e1, e2 = theoretical_params
-            beta_const = math.gamma(e1) * math.gamma(e2) / math.gamma(e1 + e2)
-            theoretical_pdf = (bin_centers ** (e1 - 1) * (1 - bin_centers) ** (e2 - 1)) / beta_const
-        elif distribution.lower() == 'normal':
-            mu, sigma = theoretical_params[1]
-            theoretical_pdf = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((bin_centers - mu) / sigma) ** 2)
-        else:
-            raise ValueError("Distribution not supported")
-
-        # Plot empirical and theoretical distributions
-        plt.figure(figsize=(10, 6))
-        plt.plot(bin_centers, empirical_hist, label='Empirical Distribution', linestyle='-', marker='o')
-        plt.plot(bin_centers, theoretical_pdf, label='Theoretical Distribution', linestyle='-', marker='x')
-        plt.xlabel('Value')
-        plt.ylabel('Density')
-        plt.title(f'Empirical vs Theoretical Distribution ({distribution.capitalize()})')
-        plt.legend()
-        plt.show()
-
-
-    def plot_theoretical_beta_distribution(self, e1, e2, num_points=1000):
-        x = np.linspace(0, 1, num_points)
-        beta_const = math.gamma(e1) * math.gamma(e2) / math.gamma(e1 + e2)
-        y = (x ** (e1 - 1) * (1 - x) ** (e2 - 1)) / beta_const
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(x, y, label=f'Theoretical Beta({e1}, {e2})', color='b')
-        plt.xlabel('Value')
-        plt.ylabel('Density')
-        plt.title(f'Theoretical Distribution of Beta({e1}, {e2})')
-        plt.legend()
-        plt.show()"""
+        return mu + vol * lambda_t
