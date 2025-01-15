@@ -1,12 +1,14 @@
 import pandas as pd
 import numpy as np
 import math
+
+from typing_extensions import Optional
+
 from data_preprocessor import Data
 from scipy.optimize import minimize
 from scipy.special import gammaln
 import matplotlib.pyplot as plt
-from scipy.stats import beta, chi2
-
+from scipy.stats import beta, chi2, norm
 
 class Return(Data):
     '''def __init__(self, dict_data : dict):
@@ -179,38 +181,75 @@ class SentimentIndex(Data):
         plt.legend()
         plt.show()
 
-
 class Likelihood(Data):
 
-    '''def chi_square_test(self, distribution: str, bins: int = 10) -> dict:
-        """
-        Effectue un test du chi-carré pour évaluer l'ajustement de la distribution théorique.
+    """def theoretical_vs_empirical(self, distribution: str):
+        '''
+        Compare the theoretical distribution to the empirical distribution
         Args:
-            distribution (str): Distribution à tester ('beta').
-            bins (int): Nombre de classes pour le regroupement.
-        Returns:
-            dict: Résultats du test du chi-carré.
-        """
+            distribution (str): Theoretical distribution to compare ('beta' or 'normal')
+        '''
+        # Sentiment index
         sentiment_index = SentimentIndex(self.dict_data).sentiment_index.iloc[:, 1].to_numpy()
-        params = self.MLE('beta') if distribution.lower() == 'beta' else None
-        if params is None:
-            raise ValueError("Distribution non supportée.")
 
-        a, b = params
-        bin_edges = np.linspace(0, 1, bins + 1)
-        observed, _ = np.histogram(sentiment_index, bins=bin_edges)
-        expected = np.diff(beta.cdf(bin_edges, a, b)) * len(sentiment_index)
+        # Parameters
+        x = np.linspace(0.05, 0.95, 100)
+        if distribution == 'beta':
+            e1, e2 = self.MLE('beta')
+            y = beta.pdf(x, e1, e2)
+        elif distribution == 'normal':
+            e1, e2, b = self.MLE('normal')
+            z_bar = e1 / (e1 + e2)
 
-        chi_stat = np.sum((observed - expected) ** 2 / expected)
-        dof = bins - 1 - len(params)
-        p_value = 1 - chi2.cdf(chi_stat, dof)
+            '''# Calculate mu(x) and sigma(x) for each x
+            mu = x + (e1 + e2) * (z_bar - x) * b
+            sigma = np.sqrt(2 * b * (1 - x) * x)
 
-        return {
-            'chi_square_stat': chi_stat,
-            'degrees_of_freedom': dof,
-            'p_value': p_value,
-            'interpretation': "Acceptable" if p_value > 0.05 else "Non acceptable"
-        }'''
+            # Theoretical PDF as per your model
+            y = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)'''
+
+            '''for z_t in sentiment_index:
+                # Calcul des paramètres conditionnels
+                mu = z_t + (e1 + e2) * (z_bar - z_t) * b
+                sigma = np.sqrt(2 * b * (1 - z_t) * z_t)
+
+                # Distribution normale conditionnelle
+                y = norm.pdf(x, loc=mu, scale=sigma)
+                plt.plot(x, y, label=f"$z_t={z_t:.2f}$")
+
+            plt.show()'''
+
+            conditional_densities = []
+            x = np.linspace(0.05, 0.95, 1000)
+            # Calcul des densités conditionnelles pour chaque z_t
+            for z_t in x:
+                mu = z_t + (e1 + e2) * (z_bar - z_t) * b
+                sigma = np.sqrt(2 * b * (1 - z_t) * z_t)
+                density = norm.pdf(x, loc=mu, scale=sigma)
+                conditional_densities.append(density)
+
+            # Moyenne des densités conditionnelles (pondération uniforme)
+            average_density = np.mean(conditional_densities, axis=0)
+
+            plt.plot(x, average_density, color="red", linestyle="--", label="PDF Théorique Moyenne (Parabole)")
+            plt.show()
+
+        else:
+            raise ValueError("Distribution not supported")
+
+        # Calculate the histogram data
+        counts, bins = np.histogram(sentiment_index, bins=30, density=True)
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+        # Plot the points at the tops of the histogram bars
+        plt.figure(figsize=(10, 6))
+        plt.scatter(bin_centers, counts, color='blue', label='Empirical')
+        plt.plot(x, y, color='red', label='Theoretical')
+        plt.xlabel('Sentiment Index')
+        plt.ylabel('Density')
+        plt.title(f'Theoretical vs Empirical Distribution of the Sentiment Index ({distribution.capitalize()})')
+        plt.legend()
+        plt.show()"""
 
     # Unconditional distribution of the sentiment index
     def neg_beta_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
@@ -353,7 +392,7 @@ class Likelihood(Data):
             raise ValueError("Distribution not supported")
 
 class MonteCarlo(Data):
-    def simulation(self, num_simulations: int = 1000, num_days: int = 252) -> np.ndarray:
+    def simulation(self, num_simulations: int = 1000, num_days: Optional[int] = None) -> np.ndarray:
         '''
         Perform Monte Carlo simulation based on the Normal distribution and parameters
         Args:
@@ -364,6 +403,10 @@ class MonteCarlo(Data):
         '''
         likelihood = Likelihood(self.dict_data)
 
+        # Number of days
+        if not isinstance(num_days, int):
+            num_days = len(self.index)
+
         # Parameters
         e1, e2, b = likelihood.MLE('normal', 0.95)
 
@@ -373,15 +416,13 @@ class MonteCarlo(Data):
         # Simulate the sentiment index
         for simul in range(num_simulations):
             for day in range(1, num_days):
-
-                valid_bound_condition = simulated_sentiment_index[day, simul] > 0 and simulated_sentiment_index[day, simul] < 1
-                while not valid_bound_condition:
+                while not (simulated_sentiment_index[day, simul] > 0 and simulated_sentiment_index[day, simul] < 1):
                     simulated_sentiment_index[day, simul] = self._individual_simulation(simulated_sentiment_index[day - 1, simul],
                                                                                         e1, e2, b)
 
         return simulated_sentiment_index
 
-    def _individual_simulation(self, z_t, e1, e2, b):
+    def _individual_simulation(self, z_t, e1, e2, b) -> float:
         '''
         Compute the next sentiment index value based on the Normal distribution
         Args:
@@ -397,3 +438,7 @@ class MonteCarlo(Data):
         lambda_t = np.random.normal(0,1)
 
         return mu + vol * lambda_t
+
+class EarlyWarningIndicator(Data):
+    def a(self):
+        return
