@@ -10,6 +10,7 @@ from scipy.special import gammaln
 import matplotlib.pyplot as plt
 from scipy.stats import beta, chi2, norm
 
+
 class Return(Data):
     '''def __init__(self, dict_data : dict):
         # Get the index and stock data
@@ -183,7 +184,7 @@ class SentimentIndex(Data):
 
 class Likelihood(Data):
 
-    """def theoretical_vs_empirical(self, distribution: str):
+    def theoretical_vs_empirical(self, distribution: str):
         '''
         Compare the theoretical distribution to the empirical distribution
         Args:
@@ -249,7 +250,7 @@ class Likelihood(Data):
         plt.ylabel('Density')
         plt.title(f'Theoretical vs Empirical Distribution of the Sentiment Index ({distribution.capitalize()})')
         plt.legend()
-        plt.show()"""
+        plt.show()
 
     # Unconditional distribution of the sentiment index
     def neg_beta_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
@@ -342,18 +343,24 @@ class Likelihood(Data):
         return -ll
 
     # Maximum Likelihood Estimation
-    def MLE(self, distribution: str, drop_extreme: float = None) -> tuple:
+    def MLE(self, distribution: str, drop_extreme: float = None, start: int = None, end: int = None) -> tuple:
         '''
         Compute the MLE
         Args:
             distribution (str) : Distribution to use for the MLE (Normal, Beta)
             drop_extreme (float) : Drop sentiment index values above this threshold (optional)
+            start (int) : Start date index
+            end (int) : End date index
         Return:
             tuple : MLE parameters
         '''
         # Sentiment index
         sentiment_index_obj = SentimentIndex(self.dict_data)
-        sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()
+
+        if start is None or end is None:
+            sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()
+        else:
+            sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()[start:end]
 
         # Drop extreme sentiment index values if specified
         if drop_extreme:
@@ -440,5 +447,26 @@ class MonteCarlo(Data):
         return mu + vol * lambda_t
 
 class EarlyWarningIndicator(Data):
-    def a(self):
-        return
+    # Maximum Likelihood Estimation
+    def params(self, distribution: str, drop_extreme: float = None, window: int = 750) -> tuple:
+        '''
+        Compute the MLE
+        Args:
+            distribution (str) : Distribution to use for the MLE (Normal, Beta)
+            drop_extreme (float) : Drop sentiment index values above this threshold (optional)
+            window (int) : Rolling window
+        Return:
+            tuple : MLE parameters
+        '''
+        # Sentiment index
+        sentiment_index_obj = SentimentIndex(self.dict_data)
+        len_sentiment_index = len(sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy())
+
+        likelihood = Likelihood(self.dict_data)
+
+        for multiplier in range(1, int(len_sentiment_index/window)+1):
+            start = window * (multiplier - 1)
+            end = window * multiplier
+            params = likelihood.MLE(distribution, drop_extreme, start, end)
+
+        return params
