@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import math
 
 from typing_extensions import Optional
 
@@ -9,7 +8,6 @@ from scipy.optimize import minimize
 from scipy.special import gammaln
 import matplotlib.pyplot as plt
 from scipy.stats import beta, chi2, norm
-from joblib import Parallel, delayed
 from datetime import datetime
 
 
@@ -480,7 +478,7 @@ class EarlyWarningIndicator(Data):
             params = likelihood.MLE(distribution, drop_extreme, start, end)'''
 
         a = datetime.now()
-        for index, date in zip(range(window, len_sentiment_index + 1, jump), self.dates[window:]):
+        for index, date in zip(range(window, len_sentiment_index + 1, jump), self.dates[sentiment_index_obj.L:][window::5]):
             start = index - window
             end = index
             params = likelihood.MLE(distribution, drop_extreme, start, end)
