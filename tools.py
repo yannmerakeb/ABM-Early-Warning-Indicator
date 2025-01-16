@@ -59,29 +59,34 @@ class Return(Data):
         Return:
             np.array : beta
         '''
+        """cst_ones = np.ones((len(self.index[1:]), 1))
+        t = np.arange(len(self.index[1:]))"""
+
         cst_ones = np.ones((len(self.index[1:]), 1))
-        t = np.arange(len(self.index[1:]))
+        #t = np.arange(1, len(self.index[1:]) + 1)
+        t = np.arange(1, len(self.index))
+
         X = np.column_stack((cst_ones, t))
         y = self.cumulative_returns(index=True)[1:]
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
 
     @property
-    def detrended_returns(self) -> dict:
+    def detrended_prices(self) -> dict:
         '''
-        Detrend stock returns
+        Detrend stock prices
         Return:
-            dict : Detrended returns = returns * exp(-avg_daily_return * t)
+            dict : Detrended prices = prices * exp(-avg_daily_return * t)
         '''
         # Number of days, including 0 for the first day (not detrended)
         t = np.arange(len(self.index))
         # t = self.index.index.to_numpy().reshape(-1, 1)
         detrend_factor = np.exp(-self.avg_daily_return[1] * t)
 
-        self.detrended_stock_returns_dict = {}
+        self.detrended_prices_dict = {}
         for stock in self.stock_names:
-            self.detrended_stock_returns_dict[stock] = self.stocks[stock] * detrend_factor
-        return self.detrended_stock_returns_dict
+            self.detrended_prices_dict[stock] = self.stocks[stock] * detrend_factor
+        return self.detrended_prices_dict
 
 class SentimentIndex(Data):
     def __init__(self, dict_data: dict, EMA_window: int = 100):
@@ -90,6 +95,8 @@ class SentimentIndex(Data):
         self.L = EMA_window
         # Weight used for the EMA
         self.W = 2 / (self.L + 1)
+
+        self.detrended_prices = Return(self.dict_data).detrended_prices
 
     def _EMA_init(self) -> dict:
         '''
@@ -103,13 +110,12 @@ class SentimentIndex(Data):
         for stock in self.stock_names:
             '''ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
             ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
-            self.EMA_dict[stock] = ema_data'''
+            self.EMA_dict[stock] = ema_data
+            ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
+            # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])'''
 
-            # ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
-            # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
-
-            ema_data = np.full(len(self.stocks[stock]), np.nan)
-            ema_data[self.L] = np.mean(self.stocks[stock][:self.L])
+            ema_data = np.full(len(self.detrended_prices[stock]), np.nan)
+            ema_data[self.L] = np.mean(self.detrended_prices[stock][:self.L])
             self.EMA_dict[stock] = ema_data
 
         return self.EMA_dict
@@ -127,11 +133,11 @@ class SentimentIndex(Data):
         for stock in self.stock_names:
             for row in range(self.L + 1, len(self.stocks[stock])):
                 # Exponential Moving Average
-                ema = self.W * self.stocks[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
+                ema = self.W * self.detrended_prices[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
                 self.EMA_dict[stock][row] = ema
 
             # Pessimistic state
-            pessimistic_state = self.stocks[stock] < self.EMA_dict[stock]
+            pessimistic_state = self.detrended_prices[stock] < self.EMA_dict[stock]
             self.pessimistic_state_dict[stock] = pessimistic_state
 
         return self.pessimistic_state_dict
@@ -467,18 +473,20 @@ class EarlyWarningIndicator(Data):
 
         likelihood = Likelihood(self.dict_data)
         params_list = []
+        dates_list = []
         '''for multiplier in range(1, int(len_sentiment_index/window)+1):
             start = window * (multiplier - 1)
             end = window * multiplier
             params = likelihood.MLE(distribution, drop_extreme, start, end)'''
 
         a = datetime.now()
-        for date in range(window, len_sentiment_index + 1, jump):
-            start = date - window
-            end = date
+        for index, date in zip(range(window, len_sentiment_index + 1, jump), self.dates[window:]):
+            start = index - window
+            end = index
             params = likelihood.MLE(distribution, drop_extreme, start, end)
             params_list.append(params)
+            dates_list.append(date)
 
         b = datetime.now()
 
-        return params_list, (a-b)
+        return params_list, (b-a)
