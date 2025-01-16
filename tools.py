@@ -9,6 +9,8 @@ from scipy.optimize import minimize
 from scipy.special import gammaln
 import matplotlib.pyplot as plt
 from scipy.stats import beta, chi2, norm
+from joblib import Parallel, delayed
+from datetime import datetime
 
 
 class Return(Data):
@@ -448,13 +450,14 @@ class MonteCarlo(Data):
 
 class EarlyWarningIndicator(Data):
     # Maximum Likelihood Estimation
-    def params(self, distribution: str, drop_extreme: float = None, window: int = 750) -> tuple:
+    def params(self, distribution: str, drop_extreme: float = None, window: int = 750, jump: int = 5) -> tuple:
         '''
         Compute the MLE
         Args:
             distribution (str) : Distribution to use for the MLE (Normal, Beta)
             drop_extreme (float) : Drop sentiment index values above this threshold (optional)
             window (int) : Rolling window
+            jump (int) : Date jump
         Return:
             tuple : MLE parameters
         '''
@@ -463,10 +466,19 @@ class EarlyWarningIndicator(Data):
         len_sentiment_index = len(sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy())
 
         likelihood = Likelihood(self.dict_data)
-
-        for multiplier in range(1, int(len_sentiment_index/window)+1):
+        params_list = []
+        '''for multiplier in range(1, int(len_sentiment_index/window)+1):
             start = window * (multiplier - 1)
             end = window * multiplier
-            params = likelihood.MLE(distribution, drop_extreme, start, end)
+            params = likelihood.MLE(distribution, drop_extreme, start, end)'''
 
-        return params
+        a = datetime.now()
+        for date in range(window, len_sentiment_index + 1, jump):
+            start = date - window
+            end = date
+            params = likelihood.MLE(distribution, drop_extreme, start, end)
+            params_list.append(params)
+
+        b = datetime.now()
+
+        return params_list, (a-b)
