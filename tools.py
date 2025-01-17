@@ -454,7 +454,7 @@ class MonteCarlo(Data):
 
 class EarlyWarningIndicator(Data):
 
-    def __init__(self, dict_data: dict, distribution: str = 'beta', drop_extreme: float = 0.95, window: int = 750, jump: int = 5):
+    def __init__(self, dict_data: dict, distribution: str = 'beta', drop_extreme: float = 0.95, window: int = 750, jump: int = 25):
         '''
         Compute the MLE
         Args:
@@ -485,7 +485,7 @@ class EarlyWarningIndicator(Data):
         dates_list = []
 
         a = datetime.now()
-        for index, date in zip(range(self.window, len_sentiment_index + 1, self.jump), self.dates[sentiment_index_obj.L:][self.window::5]):
+        for index, date in zip(range(self.window, len_sentiment_index + 1, self.jump), self.dates[sentiment_index_obj.L:][self.window::self.jump]):
             start = index - self.window
             end = index
             params = likelihood.MLE(self.distribution, self.drop_extreme, start, end)
@@ -494,7 +494,7 @@ class EarlyWarningIndicator(Data):
 
         b = datetime.now()
 
-        return params_list, (b-a)
+        return dates_list, params_list
 
 class Graph(Data):
 
@@ -553,13 +553,20 @@ class Graph(Data):
         Return:
             plt
         '''
-        sentiment_index_obj = SentimentIndex(self.dict_data)
+        # sentiment_index_obj = SentimentIndex(self.dict_data)
 
-        dates = pd.DataFrame(self.dates[sentiment_index_obj.L:][self.EWI.window::5], columns=['Date'])
-        data = pd.concat([dates, pd.DataFrame(self.EWI.estimation, columns=['EWI'])], axis=1)
+        # dates = pd.DataFrame(dates, columns=['Date'])
+        dates, params = self.EWI.estimation
+
+        data = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
+
+        percentil_90 = np.percentile(params, 90)
+        percentil_10 = np.percentile(params, 10)
 
         plt.figure(figsize=(12, 8))
         plt.plot(data['Date'], data['EWI'])
+        plt.axhline(y=percentil_90, color='r', linestyle='--', label='90th percentile (bull market)')
+        plt.axhline(y=percentil_10, color='r', linestyle='--', label='10th percentile (bear market)')
         plt.title("Early Warning Indicator")
         plt.xlabel("Date")
         plt.show()
