@@ -565,8 +565,8 @@ class Graph(Data):
 
         plt.figure(figsize=(12, 8))
         plt.plot(data['Date'], data['EWI'])
-        plt.axhline(y=percentil_90, color='r', linestyle='--', label='90th percentile (bull market)')
-        plt.axhline(y=percentil_10, color='r', linestyle='--', label='10th percentile (bear market)')
+        plt.axhline(y=percentil_90, color='darkgray', linestyle='--', label='90th percentile (bull market)')
+        plt.axhline(y=percentil_10, color='lightgray', linestyle='--', label='10th percentile (bear market)')
         plt.title("Early Warning Indicator")
         plt.xlabel("Date")
         plt.show()
