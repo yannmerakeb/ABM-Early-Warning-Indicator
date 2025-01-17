@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from data_preprocessor import Data
 import matplotlib.pyplot as plt
-from likelihood import Likelihood
+# from likelihood import Likelihood
 from returns import Return
 
 class SentimentIndex(Data):
@@ -13,7 +13,7 @@ class SentimentIndex(Data):
         # Weight used for the EMA
         self.W = 2 / (self.L + 1)
 
-        self.detrended_prices = Return(self.dict_data).detrended_prices
+        self.detrended_stocks = Return(self.dict_data).detrended_prices('all_stocks')
 
     def _EMA_init(self) -> dict:
         '''
@@ -31,8 +31,8 @@ class SentimentIndex(Data):
             ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
             # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])'''
 
-            ema_data = np.full(len(self.detrended_prices[stock]), np.nan)
-            ema_data[self.L] = np.mean(self.detrended_prices[stock][:self.L])
+            ema_data = np.full(len(self.detrended_stocks[stock]), np.nan)
+            ema_data[self.L] = np.mean(self.detrended_stocks[stock][:self.L])
             self.EMA_dict[stock] = ema_data
 
         return self.EMA_dict
@@ -50,11 +50,11 @@ class SentimentIndex(Data):
         for stock in self.stock_names:
             for row in range(self.L + 1, len(self.stocks[stock])):
                 # Exponential Moving Average
-                ema = self.W * self.detrended_prices[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
+                ema = self.W * self.detrended_stocks[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
                 self.EMA_dict[stock][row] = ema
 
             # Pessimistic state
-            pessimistic_state = self.detrended_prices[stock] < self.EMA_dict[stock]
+            pessimistic_state = self.detrended_stocks[stock] < self.EMA_dict[stock]
             self.pessimistic_state_dict[stock] = pessimistic_state
 
         return self.pessimistic_state_dict
@@ -82,7 +82,7 @@ class SentimentIndex(Data):
 
         return sentiment_index_df
 
-    def autocorrelation(self):
+    """def autocorrelation(self):
         '''
         Compute the autocorrelation function of the sentiment index
         Return:
@@ -105,4 +105,4 @@ class SentimentIndex(Data):
         plt.ylabel('Autocorrelation')
         plt.title('Autocorrelation Function of the Sentiment Index')
         plt.legend()
-        plt.show()
+        plt.show()"""

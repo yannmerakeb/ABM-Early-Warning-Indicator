@@ -11,6 +11,8 @@ class Data:
         self.stocks = dict_data['stocks']
 
         # Get the names of the indexes and stocks
+        # self.index_name = list(self.index.keys())[0]
+        self.index_name = 'JSE'
         self.stock_names = list(self.stocks.keys())
 
         # Get the dates
@@ -35,7 +37,7 @@ class DataPreprocessor:
 
         # Get list of all CSV files in the specified directory
         for file_name in tqdm(os.listdir(self.directory_path), desc="Processing CSV files"):
-            if file_name.endswith('.csv') and file_name == 'Nasdaq100.csv':
+            if file_name.endswith('.csv') and file_name == 'TSX.csv':
                 file_path = os.path.join(self.directory_path, file_name)
 
                 # Process each CSV file and extract data

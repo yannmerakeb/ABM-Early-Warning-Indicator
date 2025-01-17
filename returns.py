@@ -51,10 +51,11 @@ class Return(Data):
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
 
-    @property
-    def detrended_prices(self) -> dict:
+    def detrended_prices(self, index_stocks: str):
         '''
-        Detrend stock prices
+        Detrend stock/index prices
+        Args:
+            index_stocks (str) : 'index', 'all_stocks', or a specific stock name
         Return:
             dict : Detrended prices = prices * exp(-avg_daily_return * t)
         '''
@@ -63,7 +64,16 @@ class Return(Data):
         # t = self.index.index.to_numpy().reshape(-1, 1)
         detrend_factor = np.exp(-self.avg_daily_return[1] * t)
 
-        self.detrended_prices_dict = {}
-        for stock in self.stock_names:
-            self.detrended_prices_dict[stock] = self.stocks[stock] * detrend_factor
-        return self.detrended_prices_dict
+        if index_stocks == 'all_stocks':
+            detrended_stocks_dict = {}
+            for stock in self.stock_names:
+                detrended_stocks_dict[stock] = self.stocks[stock] * detrend_factor
+            return detrended_stocks_dict
+
+        elif index_stocks == 'index':
+            detrended_index = self.index * detrend_factor
+            return detrended_index
+
+        else:
+            detrended_single_stock = self.stocks[index_stocks] * detrend_factor
+            return detrended_single_stock
