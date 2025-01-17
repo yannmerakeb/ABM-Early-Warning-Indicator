@@ -63,6 +63,7 @@ class Graph(Data):
         Return:
             plt
         '''
+        dates =
         data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
                           pd.DataFrame(self.EWI.estimation(0.95), columns=['EWI'])], axis=1)
 

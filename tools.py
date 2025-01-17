@@ -453,8 +453,8 @@ class MonteCarlo(Data):
         return mu + vol * lambda_t
 
 class EarlyWarningIndicator(Data):
-    # Maximum Likelihood Estimation
-    def estimation(self, distribution: str = 'beta', drop_extreme: float = None, window: int = 750, jump: int = 5) -> tuple:
+
+    def __init__(self, dict_data: dict, distribution: str = 'beta', drop_extreme: float = 0.95, window: int = 750, jump: int = 5):
         '''
         Compute the MLE
         Args:
@@ -462,6 +462,17 @@ class EarlyWarningIndicator(Data):
             drop_extreme (float) : Drop sentiment index values above this threshold (optional)
             window (int) : Rolling window
             jump (int) : Date jump
+        '''
+        super().__init__(dict_data)
+        self.distribution = distribution
+        self.drop_extreme = drop_extreme
+        self.window = window
+        self.jump = jump
+
+    @property
+    def estimation(self) -> tuple:
+        '''
+        Estimate the MLE
         Return:
             tuple : MLE parameters
         '''
@@ -472,16 +483,12 @@ class EarlyWarningIndicator(Data):
         likelihood = Likelihood(self.dict_data)
         params_list = []
         dates_list = []
-        '''for multiplier in range(1, int(len_sentiment_index/window)+1):
-            start = window * (multiplier - 1)
-            end = window * multiplier
-            params = likelihood.MLE(distribution, drop_extreme, start, end)'''
 
         a = datetime.now()
-        for index, date in zip(range(window, len_sentiment_index + 1, jump), self.dates[sentiment_index_obj.L:][window::5]):
-            start = index - window
+        for index, date in zip(range(self.window, len_sentiment_index + 1, self.jump), self.dates[sentiment_index_obj.L:][self.window::5]):
+            start = index - self.window
             end = index
-            params = likelihood.MLE(distribution, drop_extreme, start, end)
+            params = likelihood.MLE(self.distribution, self.drop_extreme, start, end)
             params_list.append(params[1] - params[0])
             dates_list.append(date)
 
@@ -546,8 +553,10 @@ class Graph(Data):
         Return:
             plt
         '''
-        data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
-                          pd.DataFrame(self.EWI.estimation(drop_extreme=0.95), columns=['EWI'])], axis=1)
+        sentiment_index_obj = SentimentIndex(self.dict_data)
+
+        dates = pd.DataFrame(self.dates[sentiment_index_obj.L:][self.EWI.window::5], columns=['Date'])
+        data = pd.concat([dates, pd.DataFrame(self.EWI.estimation, columns=['EWI'])], axis=1)
 
         plt.figure(figsize=(12, 8))
         plt.plot(data['Date'], data['EWI'])
