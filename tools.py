@@ -1,25 +1,15 @@
 import pandas as pd
 import numpy as np
-
-from typing_extensions import Optional
-
-from data_preprocessor import Data
+import seaborn as sns
 from scipy.optimize import minimize
 from scipy.special import gammaln
 import matplotlib.pyplot as plt
-from scipy.stats import beta, chi2, norm
+from scipy.stats import beta
 from datetime import datetime
+from data_preprocessor import Data
 
 
-class Return(Data):
-    '''def __init__(self, dict_data : dict):
-        # Get the index and stock data
-        self.index = dict_data['index']
-        self.stocks = dict_data['stocks']
-
-        # Get the names of the indexes and stocks
-        self.index_names = self.index.columns[1]
-        self.stock_names = list(self.stocks.keys())'''
+class ReturnsAndPrices(Data):
 
     def cumulative_returns(self, index: bool):
         if index:
@@ -33,35 +23,31 @@ class Return(Data):
             return self.stock_cum_returns_dict
 
     def returns(self, index: bool):
-        '''
+        """
         Compute the returns of the index or the stocks
         Args:
             index (bool) : True if the index, False if the stocks
         Return:
             np.array or dict : returns
-        '''
+        """
         if index:
-            return self.cumulative_returns(index).diff()[1:].to_numpy().reshape(-1,1)
+            return np.diff(self.cumulative_returns(index), axis=0).reshape(-1, 1)
         else:
             cum_returns = self.cumulative_returns(index=False)
 
-            self.stock_returns_dict = {}
+            stock_returns_dict = {}
             for stock in self.stock_names:
-                self.stock_returns_dict[stock] = cum_returns[stock].diff()[1:].to_numpy().reshape(-1,1)
-            return self.stock_returns_dict
+                stock_returns_dict[stock] = cum_returns[stock].diff()[1:].to_numpy().reshape(-1,1)
+            return stock_returns_dict
 
-    @property
     def avg_daily_return(self):
-        '''
+        """
         OLS regression (cumulative_returns = cst + avg_daily_return * t => y = beta[0] + beta[1] * X)
         Return:
             np.array : beta
-        '''
-        """cst_ones = np.ones((len(self.index[1:]), 1))
-        t = np.arange(len(self.index[1:]))"""
+        """
 
         cst_ones = np.ones((len(self.index[1:]), 1))
-        #t = np.arange(1, len(self.index[1:]) + 1)
         t = np.arange(1, len(self.index))
 
         X = np.column_stack((cst_ones, t))
@@ -69,85 +55,94 @@ class Return(Data):
         beta = np.linalg.inv(X.T @ X) @ X.T @ y
         return beta
 
-    @property
-    def detrended_prices(self) -> dict:
-        '''
+    def detrended_prices(self, is_index: bool or str) -> dict:
+        """
         Detrend stock prices
         Return:
             dict : Detrended prices = prices * exp(-avg_daily_return * t)
-        '''
+        """
         # Number of days, including 0 for the first day (not detrended)
         t = np.arange(len(self.index))
         # t = self.index.index.to_numpy().reshape(-1, 1)
-        detrend_factor = np.exp(-self.avg_daily_return[1] * t)
+        detrend_factor = np.exp(-self.avg_daily_return()[1] * t)
 
-        self.detrended_prices_dict = {}
-        for stock in self.stock_names:
-            self.detrended_prices_dict[stock] = self.stocks[stock] * detrend_factor
-        return self.detrended_prices_dict
+        if is_index:
+            return self.index * detrend_factor
+        else:
+            self.detrended_prices_dict = {}
+            for stock in self.stock_names:
+                self.detrended_prices_dict[stock] = self.stocks[stock] * detrend_factor
+            return self.detrended_prices_dict
+
+    def formated_index_prices(self, window: int) -> tuple:
+        """
+        Format the index prices data
+        Arg:
+            shift (int) : shift the beginning date
+        """
+        dates = self.dates[window:]
+
+        df = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                        pd.DataFrame(self.index, columns=['Prices'])], axis=1)
+        detrended_df = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                                  pd.DataFrame(self.detrended_prices(True), columns=['Detrended Prices'])],
+                                 axis=1)
+
+        return df, detrended_df
 
 class SentimentIndex(Data):
     def __init__(self, dict_data: dict, EMA_window: int = 100):
-        # Exponential Moving Average time window
         super().__init__(dict_data)
+        # Exponential Moving Average time window
         self.L = EMA_window
         # Weight used for the EMA
         self.W = 2 / (self.L + 1)
 
-        self.detrended_prices = Return(self.dict_data).detrended_prices
+        self.detrended_prices = ReturnsAndPrices(self.dict_data).detrended_prices(False)
 
     def _EMA_init(self) -> dict:
-        '''
+        """
         Initialize the EMA, the first value is the SMA
         Return:
             dict : initialized EMA
-
-        '''
-        self.EMA_dict = {}
+        """
+        EMA_dict = {}
 
         for stock in self.stock_names:
-            '''ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
-            ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])
-            self.EMA_dict[stock] = ema_data
-            ema_data = pd.concat([self.stocks[stock]['Date'], pd.DataFrame(index=self.stocks[stock].index, columns=[stock])], axis=1)
-            # ema_data.iloc[self.L] = np.mean(self.stocks[stock].iloc[:self.L, 1])'''
-
             ema_data = np.full(len(self.detrended_prices[stock]), np.nan)
             ema_data[self.L] = np.mean(self.detrended_prices[stock][:self.L])
-            self.EMA_dict[stock] = ema_data
+            EMA_dict[stock] = ema_data
 
-        return self.EMA_dict
+        return EMA_dict
 
-    @property
     def pessimistic_state(self) -> dict:
-        '''
+        """
         Compute the EMA by stock, and then the pessimistic state (binary)
         Return:
             dict : pessimistic state by stock
-        '''
-        self.EMA_dict = self._EMA_init()
-        self.pessimistic_state_dict = {}
+        """
+        EMA_dict = self._EMA_init()
+        pessimistic_state_dict = {}
 
         for stock in self.stock_names:
             for row in range(self.L + 1, len(self.stocks[stock])):
                 # Exponential Moving Average
-                ema = self.W * self.detrended_prices[stock][row] + (1 - self.W) * self.EMA_dict[stock][row - 1]
-                self.EMA_dict[stock][row] = ema
+                ema = self.W * self.detrended_prices[stock][row] + (1 - self.W) * EMA_dict[stock][row - 1]
+                EMA_dict[stock][row] = ema
 
             # Pessimistic state
-            pessimistic_state = self.detrended_prices[stock] < self.EMA_dict[stock]
-            self.pessimistic_state_dict[stock] = pessimistic_state
+            pessimistic_state = self.detrended_prices[stock] < EMA_dict[stock]
+            pessimistic_state_dict[stock] = pessimistic_state
 
-        return self.pessimistic_state_dict
+        return pessimistic_state_dict
 
-    @property
     def sentiment_index(self) -> pd.DataFrame:
-        '''
+        """
         Compute the sentiment index and the daily changes
         Return:
             pd.DataFrame : sentiment index
-        '''
-        pessimistic_states = self.pessimistic_state
+        """
+        pessimistic_states = self.pessimistic_state()
         sentiment_index_list = []
 
         for date_index in range(len(self.index)):
@@ -164,11 +159,11 @@ class SentimentIndex(Data):
         return sentiment_index_df
 
     def autocorrelation(self):
-        '''
+        """
         Compute the autocorrelation function of the sentiment index
         Return:
             plt
-        '''
+        """
         # Maximum Likelihood Estimation
         likelihood_obj = Likelihood(self.dict_data)
         e1, e2, b = likelihood_obj.MLE('normal', 0.95)[0]
@@ -190,57 +185,25 @@ class SentimentIndex(Data):
 
 class Likelihood(Data):
 
-    def theoretical_vs_empirical(self, distribution: str):
-        '''
+    def theoretical_vs_empirical(self, distribution: str, drop_threshold: float = None):
+        """
         Compare the theoretical distribution to the empirical distribution
         Args:
             distribution (str): Theoretical distribution to compare ('beta' or 'normal')
-        '''
+            drop_threshold (float): Drop sentiment index values above this threshold (optional)
+        """
         # Sentiment index
-        sentiment_index = SentimentIndex(self.dict_data).sentiment_index.iloc[:, 1].to_numpy()
+        sentiment_index = SentimentIndex(self.dict_data).sentiment_index().iloc[:, 1].to_numpy()
 
         # Parameters
         x = np.linspace(0.05, 0.95, 100)
         if distribution == 'beta':
             e1, e2 = self.MLE('beta')
-            y = beta.pdf(x, e1, e2)
+            theoretical_distribution = beta.pdf(x, e1, e2)
         elif distribution == 'normal':
-            e1, e2, b = self.MLE('normal')
-            z_bar = e1 / (e1 + e2)
-
-            '''# Calculate mu(x) and sigma(x) for each x
-            mu = x + (e1 + e2) * (z_bar - x) * b
-            sigma = np.sqrt(2 * b * (1 - x) * x)
-
-            # Theoretical PDF as per your model
-            y = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)'''
-
-            '''for z_t in sentiment_index:
-                # Calcul des paramètres conditionnels
-                mu = z_t + (e1 + e2) * (z_bar - z_t) * b
-                sigma = np.sqrt(2 * b * (1 - z_t) * z_t)
-
-                # Distribution normale conditionnelle
-                y = norm.pdf(x, loc=mu, scale=sigma)
-                plt.plot(x, y, label=f"$z_t={z_t:.2f}$")
-
-            plt.show()'''
-
-            conditional_densities = []
-            x = np.linspace(0.05, 0.95, 1000)
-            # Calcul des densités conditionnelles pour chaque z_t
-            for z_t in x:
-                mu = z_t + (e1 + e2) * (z_bar - z_t) * b
-                sigma = np.sqrt(2 * b * (1 - z_t) * z_t)
-                density = norm.pdf(x, loc=mu, scale=sigma)
-                conditional_densities.append(density)
-
-            # Moyenne des densités conditionnelles (pondération uniforme)
-            average_density = np.mean(conditional_densities, axis=0)
-
-            plt.plot(x, average_density, color="red", linestyle="--", label="PDF Théorique Moyenne (Parabole)")
-            plt.show()
-
+            mc = MonteCarlo(self.dict_data)
+            simulated_sentiment_index = mc.simulation(drop_threshold)
+            theoretical_distribution = simulated_sentiment_index.flatten()
         else:
             raise ValueError("Distribution not supported")
 
@@ -251,7 +214,10 @@ class Likelihood(Data):
         # Plot the points at the tops of the histogram bars
         plt.figure(figsize=(10, 6))
         plt.scatter(bin_centers, counts, color='blue', label='Empirical')
-        plt.plot(x, y, color='red', label='Theoretical')
+        if distribution == 'normal':
+            sns.kdeplot(theoretical_distribution, color='red', label='Theoretical')
+        else:
+            plt.plot(x, theoretical_distribution, color='red', label='Theoretical')
         plt.xlabel('Sentiment Index')
         plt.ylabel('Density')
         plt.title(f'Theoretical vs Empirical Distribution of the Sentiment Index ({distribution.capitalize()})')
@@ -260,11 +226,11 @@ class Likelihood(Data):
 
     # Unconditional distribution of the sentiment index
     def neg_beta_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
-        '''
+        """
         Compute the beta log likelihood
         Return:
             float : beta log likelihood
-        '''
+        """
         # Parameters
         e1, e2 = params
 
@@ -285,92 +251,51 @@ class Likelihood(Data):
 
     # Conditional distribution of the sentiment index
     def neg_normal_log_likelihood(self, params: tuple, sentiment_index: np.ndarray) -> float:
-        '''
+        """
         Compute the Normal log likelihood
         Args:
             params (tuple) : Normal parameters
             sentiment_index (np.ndarray) : Sentiment index
         Return:
             float : Normal log likelihood
-        '''
+        """
         # Parameters
         e1, e2, b = params
 
         # Mean and standard deviation
         z_bar = e1 / (e1 + e2)
         mu = (sentiment_index + (e1 + e2) * (z_bar - sentiment_index) * b)[:-1]
-        #mu = (sentiment_index + (e1 - (e1 + e2) * sentiment_index) * b)[:-1]
         sigma = np.sqrt(2 * b * (1 - sentiment_index) * sentiment_index)[:-1]
 
         # Log likelihood
-        '''ll = (- 0.5 * np.sum(np.log(2 * np.pi * sigma[:-1] ** 2))
-              - 0.5 * np.sum(((sentiment_index[1:] - mu[:-1]) / sigma[:-1]) ** 2))'''
         ll = (- 0.5 * np.sum(np.log(2 * np.pi * sigma ** 2))
               - 0.5 * np.sum(((sentiment_index[1:] - mu) / sigma) ** 2))
-
-        """
-        n = len(sentiment_index)
-        z = sentiment_index
-
-        ll = 0.0
-        count_valid = 0  # Pour compter le nb de points utilisés
-
-        for t in range(n - 1):
-            zt = z[t]
-            ztp1 = z[t + 1]
-
-            # -- Sauter les points proches de 0 ou 1 --
-            if (zt <= 1e-5) or (zt >= 1 - 1e-5):
-                continue
-
-            # Calcul mu
-            mu_t = zt + (e1 - (e1 + e2) * zt) * b
-
-            # Calcul var (avec plancher)
-            var_t = 2.0 * b * zt * (1.0 - zt)
-            if var_t < 1e-12:
-                var_t = 1e-12
-
-            # Log PDF gaussienne
-            diff = ztp1 - mu_t
-
-            # -0.5 ln(2 pi var) - (diff^2)/(2 var)
-            log_pdf = -0.5 * np.log(2.0 * np.pi * var_t) \
-                      - 0.5 * (diff ** 2 / var_t)
-
-            ll += log_pdf
-            count_valid += 1
-
-        # Si vous voulez une moyenne par point, libre à vous,
-        # mais traditionnellement on renvoie -sum(loglik).
-        return -ll if count_valid > 0 else 1e10
-        """
 
         return -ll
 
     # Maximum Likelihood Estimation
-    def MLE(self, distribution: str, drop_extreme: float = None, start: int = None, end: int = None) -> tuple:
-        '''
+    def MLE(self, distribution: str, drop_threshold: float = None, start: int = None, end: int = None) -> tuple:
+        """
         Compute the MLE
         Args:
             distribution (str) : Distribution to use for the MLE (Normal, Beta)
-            drop_extreme (float) : Drop sentiment index values above this threshold (optional)
+            drop_threshold (float) : Drop sentiment index values above this threshold (optional)
             start (int) : Start date index
             end (int) : End date index
         Return:
             tuple : MLE parameters
-        '''
+        """
         # Sentiment index
         sentiment_index_obj = SentimentIndex(self.dict_data)
 
         if start is None or end is None:
-            sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()
+            sentiment_index = sentiment_index_obj.sentiment_index().iloc[:, 1].to_numpy()
         else:
-            sentiment_index = sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy()[start:end]
+            sentiment_index = sentiment_index_obj.sentiment_index().iloc[:, 1].to_numpy()[start:end]
 
         # Drop extreme sentiment index values if specified
-        if drop_extreme:
-            sentiment_index = sentiment_index[sentiment_index <= drop_extreme]
+        if drop_threshold:
+            sentiment_index = sentiment_index[sentiment_index <= drop_threshold]
 
         # Clip the sentiment index to avoid log(0) and log(1)
         epsilon = 1e-3
@@ -393,56 +318,57 @@ class Likelihood(Data):
             MLE = minimize(self.neg_normal_log_likelihood, params_init, args=(sentiment_index,),
                            bounds=bounds, method='L-BFGS-B', options=options)
 
-            e1, e2, b = MLE.x
-            z_bar = e1 / (e1 + e2)
-            # moments = (sentiment_index + (e1 + e2) * (z_bar - sentiment_index) * b,
-            #           np.sqrt(2 * b * (1 - sentiment_index) * sentiment_index) ** 2)
-
             return MLE.x
-            # return MLE.x, moments
 
         else:
             raise ValueError("Distribution not supported")
 
 class MonteCarlo(Data):
-    def simulation(self, num_simulations: int = 1000, num_days: Optional[int] = None) -> np.ndarray:
-        '''
-        Perform Monte Carlo simulation based on the Normal distribution and parameters
+
+    def __init__(self, dict_data, num_simulations: int = 1000, num_days: int = 1000):
+        """
+        Initialize the Monte Carlo simulation
         Args:
             num_simulations (int) : Number of simulations to run
             num_days (int) : Number of days to simulate
+        """
+        super().__init__(dict_data)
+        self.num_simulations = num_simulations
+        self.num_days = num_days
+
+    def simulation(self, drop_threshold: float = None) -> np.ndarray:
+        """
+        Perform Monte Carlo simulation based on the Normal distribution and parameters
+        Args:
+            drop_threshold (float) : Drop sentiment index values above this threshold (optional)
         Return:
             np.ndarray : Simulated paths
-        '''
+        """
         likelihood = Likelihood(self.dict_data)
 
-        # Number of days
-        if not isinstance(num_days, int):
-            num_days = len(self.index)
-
         # Parameters
-        e1, e2, b = likelihood.MLE('normal', 0.95)
+        e1, e2, b = likelihood.MLE('normal', drop_threshold)
 
         # Initialize the simulated sentiment index with zeros
-        simulated_sentiment_index = np.zeros((num_days, num_simulations))
+        simulated_sentiment_index = np.zeros((self.num_days, self.num_simulations))
 
         # Simulate the sentiment index
-        for simul in range(num_simulations):
-            for day in range(1, num_days):
-                while not (simulated_sentiment_index[day, simul] > 0 and simulated_sentiment_index[day, simul] < 1):
+        for simul in range(self.num_simulations):
+            for day in range(1, self.num_days):
+                while not (0 < simulated_sentiment_index[day, simul] < 1):
                     simulated_sentiment_index[day, simul] = self._individual_simulation(simulated_sentiment_index[day - 1, simul],
                                                                                         e1, e2, b)
 
         return simulated_sentiment_index
 
     def _individual_simulation(self, z_t, e1, e2, b) -> float:
-        '''
+        """
         Compute the next sentiment index value based on the Normal distribution
         Args:
             z_t (float) : Current sentiment index value
             e1, e2, b (float) : Parameters used to compute the mean and standard deviation of the Normal distribution
-        '''
-        # Compute the mean and standard deviation of the Normal distribution
+        """
+        # Compute the mean and standard deviation of the Normal distribution at each time step
         z_bar = e1 / (e1 + e2)
         mu = z_t + (e1 + e2) * (z_bar - z_t) * b
         vol = np.sqrt(2 * b * (1 - z_t) * z_t)
@@ -454,84 +380,257 @@ class MonteCarlo(Data):
 
 class EarlyWarningIndicator(Data):
 
-    def __init__(self, dict_data: dict, distribution: str = 'beta', drop_extreme: float = 0.95, window: int = 750, jump: int = 25):
-        '''
+    def __init__(self, dict_data: dict, distribution: str = 'beta', drop_threshold: float = 0.95, window: int = 750, jump: int = 25):
+        """
         Compute the MLE
         Args:
             distribution (str) : Distribution to use for the MLE (Normal, Beta)
-            drop_extreme (float) : Drop sentiment index values above this threshold (optional)
+            drop_threshold (float) : Drop sentiment index values above this threshold (optional)
             window (int) : Rolling window
             jump (int) : Date jump
-        '''
+        """
         super().__init__(dict_data)
         self.distribution = distribution
-        self.drop_extreme = drop_extreme
+        self.drop_threshold = drop_threshold
         self.window = window
         self.jump = jump
 
-    @property
     def estimation(self) -> tuple:
-        '''
+        """
         Estimate the MLE
         Return:
             tuple : MLE parameters
-        '''
+        """
         # Sentiment index
         sentiment_index_obj = SentimentIndex(self.dict_data)
-        len_sentiment_index = len(sentiment_index_obj.sentiment_index.iloc[:, 1].to_numpy())
+        len_sentiment_index = len(sentiment_index_obj.sentiment_index().iloc[:, 1].to_numpy())
 
         likelihood = Likelihood(self.dict_data)
         params_list = []
         dates_list = []
+        percentiles_90 = []
+        percentiles_10 = []
+
 
         a = datetime.now()
         for index, date in zip(range(self.window, len_sentiment_index + 1, self.jump), self.dates[sentiment_index_obj.L:][self.window::self.jump]):
             start = index - self.window
             end = index
-            params = likelihood.MLE(self.distribution, self.drop_extreme, start, end)
+            params = likelihood.MLE(self.distribution, self.drop_threshold, start, end)
             params_list.append(params[1] - params[0])
             dates_list.append(date)
+            percentiles_90.append(np.percentile(params_list, 90))
+            percentiles_10.append(np.percentile(params_list, 10))
 
         b = datetime.now()
 
-        return dates_list, params_list
+        return dates_list, params_list, percentiles_90, percentiles_10
+
+    def formated_EWI(self):
+        """
+        Format the Early Warning Indicator data
+        """
+        # EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
+        dates, params, percentils_90, percentils_10 = self.estimation()
+
+        # Create a DataFrame with the dates and the Early Warning Indicator
+        df = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
+
+        return df, self.window, percentils_90, percentils_10, dates
+
+class TradingStrategies(Data):
+    def __init__(self, dict_data: dict, drop_threshold: float = None, window: int = 750, jump: int = 75,
+                 initial_capital: float = 1000):
+        """
+        Initialize the trading strategy class
+        Args:
+            dict_data (dict) : Data dictionary
+            drop_threshold (float) : Drop sentiment index values above this threshold
+            window (int) : Rolling window used for the parameter estimation
+            jump (int) : Date jump
+        """
+        super().__init__(dict_data)
+
+        # Early Warning Indicator
+        self.EWI = EarlyWarningIndicator(self.dict_data, 'beta', drop_threshold, window, jump)
+        self.df_EWI, self.window, self.percentils_90, self.percentils_10, self.dates = self.EWI.formated_EWI()
+
+        # Index Prices
+        self.df_index = ReturnsAndPrices(self.dict_data).formated_index_prices(self.EWI.window)
+
+        # Initial capital
+        self.initial_capital = initial_capital
+
+    def signals(self):
+        """
+        Compute the trading signals
+        """
+        signals = np.where(self.df_EWI['EWI'] > self.percentils_90, 1,
+                           np.where(self.df_EWI['EWI'] < self.percentils_10, -1, 0))
+
+        return signals
+
+    def strategy(self):
+        """
+        Compute the trading strategy
+        """
+        signals = self.signals()
+
+
+
+        df_prices, df_detrended_prices = self.returns_and_prices.formated_index_prices(window)
+
 
 class Graph(Data):
 
-    def __init__(self, dict_data: dict):
-        # Sentiment index
+    def __init__(self, dict_data: dict, drop_threshold: float, window: int = 750, jump: int = 5):
         super().__init__(dict_data)
-        self.prices = Return(self.dict_data)
-        self.EWI = EarlyWarningIndicator(self.dict_data)
+        self.returns_and_prices = ReturnsAndPrices(self.dict_data)
+        self.EWI = EarlyWarningIndicator(self.dict_data, 'beta', drop_threshold, window, jump)
 
-    def plot_index_prices(self):
-        '''
-        Plot the index prices
-        '''
-        data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
+    def plot_prices_and_EWI(self):
+        """
+        Plot the prices (trended and detrended) and the Early Warning Indicator
+        """
+        df_EWI, window, percentils_90, percentils_10, dates = self.EWI.formated_EWI()
+        df_prices, df_detrended_prices = self.returns_and_prices.formated_index_prices(window)
+
+        fig, ax = plt.subplots(3, 1, figsize=(21, 14))
+
+        # Plot the Early Warning Indicator
+        ax[0].plot(df_EWI['Date'], df_EWI['EWI'])
+        ax[0].plot(df_EWI['Date'], percentils_90, color='green', linestyle='--', label='90th percentile (bull market)')
+        ax[0].plot(df_EWI['Date'], percentils_10, color='red', linestyle='--', label='10th percentile (bear market)')
+        ax[0].fill_between(df_EWI['Date'], df_EWI['EWI'].min(), df_EWI['EWI'].max(), where=(df_EWI['EWI'] > percentils_90), color='green', alpha=0.3)
+        ax[0].fill_between(df_EWI['Date'], df_EWI['EWI'].min(), df_EWI['EWI'].max(), where=(df_EWI['EWI'] < percentils_10), color='red', alpha=0.3)
+        ax[0].set_title(f"{self.index_name} Early Warning Indicator")
+        ax[0].set_xlabel("Date")
+
+        # Plot the prices
+        ax[1].plot(df_prices['Date'], df_prices['Prices'])
+        ax[1].fill_between(df_EWI['Date'], df_prices['Prices'].min(), df_prices['Prices'].max(), where=(df_EWI['EWI'] > percentils_90), color='green', alpha=0.3)
+        ax[1].fill_between(df_EWI['Date'], df_prices['Prices'].min(), df_prices['Prices'].max(), where=(df_EWI['EWI'] < percentils_10), color='red', alpha=0.3)
+        ax[1].set_xlabel("Date")
+        ax[1].set_ylabel("Prices")
+        ax[1].set_title(f"{self.index_name} Prices")
+
+        # Plot the detrended prices
+        ax[2].plot(df_detrended_prices['Date'], df_detrended_prices['Detrended Prices'])
+        ax[2].fill_between(df_EWI['Date'], df_detrended_prices['Detrended Prices'].min(), df_detrended_prices['Detrended Prices'].max(), where=(df_EWI['EWI'] > percentils_90), color='green', alpha=0.3)
+        ax[2].fill_between(df_EWI['Date'], df_detrended_prices['Detrended Prices'].min(), df_detrended_prices['Detrended Prices'].max(), where=(df_EWI['EWI'] < percentils_10), color='red', alpha=0.3)
+        ax[2].set_xlabel("Date")
+        ax[2].set_ylabel("Detrended Prices")
+        ax[2].set_title(f"{self.index_name} Detrended Prices")
+
+        plt.tight_layout()
+        plt.show()
+
+    '''def formated_index_prices(self, window: int):
+        """
+        Format the index prices data
+        Arg:
+            shift (int) : shift the beginning date
+        """
+        dates = self.dates[window:]
+
+        df = pd.concat([pd.DataFrame(dates, columns=['Date']),
                           pd.DataFrame(self.index, columns=['Prices'])], axis=1)
-        detrended_data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
-                                    pd.DataFrame(self.prices.detrended_prices('index'), columns=['Detrended Prices'])], axis=1)
+        detrended_df = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])],
+                                   axis=1)
+        
+        return df, detrended_df'''
 
-        fig, ax = plt.subplots(2, 1, figsize=(12, 8))
+    '''def formated_index_prices(self, shift: int = 750):
+        """
+        Format the index prices data
+        Arg:
+            shift (int) : shift the beginning date
+        """
+        # dates = self.dates[shift:]
+
+        data = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                          pd.DataFrame(self.index, columns=['Prices'])], axis=1)
+        detrended_data = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])], axis=1)
+
+        
+
+        fig, ax = plt.subplots(3, 1, figsize=(18, 8))
         ax[0].plot(data['Date'], data['Prices'])
-        ax[0].set_title("S&P 500 Prices")
         ax[0].set_xlabel("Date")
         ax[0].set_ylabel("Prices")
+        ax[0].set_title(f"{self.index_name} Prices")
         ax[1].plot(detrended_data['Date'], detrended_data['Detrended Prices'])
-        ax[1].set_title("S&P 500 Detrended Prices")
         ax[1].set_xlabel("Date")
         ax[1].set_ylabel("Detrended Prices")
+        ax[1].set_title(f"{self.index_name} Detrended Prices")
+
+        ax[2].plot(data1['Date'], data1['EWI'])
+        ax[2].plot(data1['Date'], percentils_90, color='green', linestyle='--', label='90th percentile (bull market)')
+        ax[2].plot(data1['Date'], percentils_10, color='red', linestyle='--', label='10th percentile (bear market)')
+        ax[2].set_title("Early Warning Indicator")
+        ax[2].set_xlabel("Date")
+
+        plt.show()'''
+
+    '''def formated_EWI(self):
+        """
+        Format the Early Warning Indicator data
+        """
+        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
+        dates, params, percentils_90, percentils_10 = EWI.estimation
+
+        # Create a DataFrame with the dates and the Early Warning Indicator
+        df = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
+        
+        return df, EWI.window, percentils_90, percentils_10'''
+
+    '''def plot_index_prices(self, shift: int = 750):
+        """
+        Plot the index prices
+        Arg:
+            shift (int) : shift the beginning date
+        """
+        dates = self.dates[shift:]
+
+        data = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                          pd.DataFrame(self.index, columns=['Prices'])], axis=1)
+        detrended_data = pd.concat([pd.DataFrame(dates, columns=['Date']),
+                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])], axis=1)
+
+        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
+        dates, params, percentils_90, percentils_10 = EWI.estimation
+
+        # Create a DataFrame with the dates and the Early Warning Indicator
+        data1 = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
+
+        fig, ax = plt.subplots(3, 1, figsize=(18, 8))
+        ax[0].plot(data['Date'], data['Prices'])
+        ax[0].set_xlabel("Date")
+        ax[0].set_ylabel("Prices")
+        ax[0].set_title(f"{self.index_name} Prices")
+        ax[1].plot(detrended_data['Date'], detrended_data['Detrended Prices'])
+        ax[1].set_xlabel("Date")
+        ax[1].set_ylabel("Detrended Prices")
+        ax[1].set_title(f"{self.index_name} Detrended Prices")
+
+        ax[2].plot(data1['Date'], data1['EWI'])
+        ax[2].plot(data1['Date'], percentils_90, color='green', linestyle='--', label='90th percentile (bull market)')
+        ax[2].plot(data1['Date'], percentils_10, color='red', linestyle='--', label='10th percentile (bear market)')
+        ax[2].set_title("Early Warning Indicator")
+        ax[2].set_xlabel("Date")
+
         plt.show()
 
     def plot_stock_prices(self, name: str):
-        '''
+        """
         Plot the stock prices
         Args:
             name (str) : stock name
         Return:
             plt
-        '''
+        """
         data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
                           pd.DataFrame(self.stocks[name], columns=['Prices'])], axis=1)
         detrended_data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
@@ -548,25 +647,24 @@ class Graph(Data):
         plt.show()
 
     def plot_EWI(self):
-        '''
+        """
         Plot the Early Warning Indicator
         Return:
             plt
-        '''
-        # sentiment_index_obj = SentimentIndex(self.dict_data)
+        """
+        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
+        dates, params, percentils_90, percentils_10 = EWI.estimation
 
-        # dates = pd.DataFrame(dates, columns=['Date'])
-        dates, params = self.EWI.estimation
-
+        # Create a DataFrame with the dates and the Early Warning Indicator
         data = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
 
-        percentil_90 = np.percentile(params, 90)
-        percentil_10 = np.percentile(params, 10)
-
+        # Plot the Early Warning Indicator
         plt.figure(figsize=(12, 8))
         plt.plot(data['Date'], data['EWI'])
-        plt.axhline(y=percentil_90, color='darkgray', linestyle='--', label='90th percentile (bull market)')
-        plt.axhline(y=percentil_10, color='lightgray', linestyle='--', label='10th percentile (bear market)')
+        plt.axhline(y=percentils_90, color='darkgray', linestyle='--', label='90th percentile (bull market)')
+        plt.axhline(y=percentils_10, color='lightgray', linestyle='--', label='10th percentile (bear market)')
         plt.title("Early Warning Indicator")
         plt.xlabel("Date")
-        plt.show()
+
+        plt.tight_layout()
+        plt.show()'''

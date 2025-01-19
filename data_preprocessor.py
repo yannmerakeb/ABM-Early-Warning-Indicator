@@ -6,26 +6,27 @@ class Data:
     def __init__(self, dict_data: dict):
         self.dict_data = dict_data
 
-        # Get the index and stock data
-        self.index = dict_data['index']
-        self.stocks = dict_data['stocks']
-
         # Get the names of the indexes and stocks
-        # self.index_name = list(self.index.keys())[0]
-        self.index_name = 'JSE'
-        self.stock_names = list(self.stocks.keys())
+        keys = list(self.dict_data.keys())
+        self.index_name = keys[0]
+        self.stock_names = list(self.dict_data[keys[1]].keys())
+
+        # Get the index and stock data
+        self.index = dict_data[self.index_name]
+        self.stocks = dict_data['stocks']
 
         # Get the dates
         self.dates = dict_data['dates']
 
 class DataPreprocessor:
-    def __init__(self, directory_path):
+    def __init__(self, directory_path: str, index_name: str):
         """
         Initialize the DataOrganizer with the directory path containing CSV files.
         Args:
             directory_path (str): Path to the folder containing the CSV files.
         """
         self.directory_path = directory_path
+        self.index_name = index_name
 
     def process_csv_files(self):
         """
@@ -33,33 +34,27 @@ class DataPreprocessor:
         Return:
             dict: Two dictionaries of DataFrames, each corresponding to a specific index.
         """
-        dataframes = {}
 
         # Get list of all CSV files in the specified directory
-        for file_name in tqdm(os.listdir(self.directory_path), desc="Processing CSV files"):
-            if file_name.endswith('.csv') and file_name == 'TSX.csv':
-                file_path = os.path.join(self.directory_path, file_name)
+        # for file_name in tqdm(os.listdir(self.directory_path), desc="Processing CSV files"):
+        # if self.file_name.endswith('.csv') and self.file_name == 'S&P500.csv':
+        file_name = f"{self.index_name}.csv"
+        file_path = os.path.join(self.directory_path, file_name)
 
-                # Process each CSV file and extract data
-                df = self._process_single_csv(file_path)
+        # Process each CSV file and extract data
+        df = self._process_single_csv(file_path)
 
-                '''# Format 'Date' column as datetime, and spot columns as float
-                df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y')
-                df.iloc[:, 1:] = df.iloc[:, 1:].astype(float)'''
+        # Store DataFrame by index name
+        # index_name = self.file_name.rsplit('.')[0]
+        df_index = df.iloc[:,:2]
 
-                # Store DataFrame by index name
-                index_name = file_name.rsplit('.')[0]
-                df_index = df.iloc[:,:2]
+        stock_names = list(df.columns[2:])
 
+        mat_index = df_index.iloc[:, 1].to_numpy()
+        mat_stocks = {stock_name : df[stock_name].to_numpy() for stock_name in stock_names}
 
-                stock_names = list(df.columns[2:])
-                #df_stocks = {stock_name : df[['Date', stock_name]] for stock_name in stock_names}
-
-                mat_index = df_index.iloc[:, 1].to_numpy()
-                mat_stocks = {stock_name : df[stock_name].to_numpy() for stock_name in stock_names}
-
-                dataframes[index_name] = {'index': mat_index, 'stocks': mat_stocks, 'dates':df['Date']}
-                # dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
+        dataframes = {self.index_name: mat_index, 'stocks': mat_stocks, 'dates':df['Date']}
+        # dataframes[index_name] = {'index': df_index, 'stocks': df_stocks}
 
         return dataframes
 
