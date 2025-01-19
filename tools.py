@@ -461,24 +461,14 @@ class TradingStrategies(Data):
         # Initial capital
         self.initial_capital = initial_capital
 
-    def signals(self):
+    '''def signals(self):
         """
         Compute the trading signals
         """
         signals = np.where(self.df_EWI['EWI'] > self.percentils_90, 1,
                            np.where(self.df_EWI['EWI'] < self.percentils_10, -1, 0))
 
-        return signals
-
-    def strategy(self):
-        """
-        Compute the trading strategy
-        """
-        signals = self.signals()
-
-
-
-        df_prices, df_detrended_prices = self.returns_and_prices.formated_index_prices(window)
+        return signals'''
 
 
 class Graph(Data):
@@ -524,147 +514,3 @@ class Graph(Data):
 
         plt.tight_layout()
         plt.show()
-
-    '''def formated_index_prices(self, window: int):
-        """
-        Format the index prices data
-        Arg:
-            shift (int) : shift the beginning date
-        """
-        dates = self.dates[window:]
-
-        df = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                          pd.DataFrame(self.index, columns=['Prices'])], axis=1)
-        detrended_df = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])],
-                                   axis=1)
-        
-        return df, detrended_df'''
-
-    '''def formated_index_prices(self, shift: int = 750):
-        """
-        Format the index prices data
-        Arg:
-            shift (int) : shift the beginning date
-        """
-        # dates = self.dates[shift:]
-
-        data = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                          pd.DataFrame(self.index, columns=['Prices'])], axis=1)
-        detrended_data = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])], axis=1)
-
-        
-
-        fig, ax = plt.subplots(3, 1, figsize=(18, 8))
-        ax[0].plot(data['Date'], data['Prices'])
-        ax[0].set_xlabel("Date")
-        ax[0].set_ylabel("Prices")
-        ax[0].set_title(f"{self.index_name} Prices")
-        ax[1].plot(detrended_data['Date'], detrended_data['Detrended Prices'])
-        ax[1].set_xlabel("Date")
-        ax[1].set_ylabel("Detrended Prices")
-        ax[1].set_title(f"{self.index_name} Detrended Prices")
-
-        ax[2].plot(data1['Date'], data1['EWI'])
-        ax[2].plot(data1['Date'], percentils_90, color='green', linestyle='--', label='90th percentile (bull market)')
-        ax[2].plot(data1['Date'], percentils_10, color='red', linestyle='--', label='10th percentile (bear market)')
-        ax[2].set_title("Early Warning Indicator")
-        ax[2].set_xlabel("Date")
-
-        plt.show()'''
-
-    '''def formated_EWI(self):
-        """
-        Format the Early Warning Indicator data
-        """
-        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
-        dates, params, percentils_90, percentils_10 = EWI.estimation
-
-        # Create a DataFrame with the dates and the Early Warning Indicator
-        df = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
-        
-        return df, EWI.window, percentils_90, percentils_10'''
-
-    '''def plot_index_prices(self, shift: int = 750):
-        """
-        Plot the index prices
-        Arg:
-            shift (int) : shift the beginning date
-        """
-        dates = self.dates[shift:]
-
-        data = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                          pd.DataFrame(self.index, columns=['Prices'])], axis=1)
-        detrended_data = pd.concat([pd.DataFrame(dates, columns=['Date']),
-                                    pd.DataFrame(self.prices.detrended_prices(True), columns=['Detrended Prices'])], axis=1)
-
-        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
-        dates, params, percentils_90, percentils_10 = EWI.estimation
-
-        # Create a DataFrame with the dates and the Early Warning Indicator
-        data1 = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
-
-        fig, ax = plt.subplots(3, 1, figsize=(18, 8))
-        ax[0].plot(data['Date'], data['Prices'])
-        ax[0].set_xlabel("Date")
-        ax[0].set_ylabel("Prices")
-        ax[0].set_title(f"{self.index_name} Prices")
-        ax[1].plot(detrended_data['Date'], detrended_data['Detrended Prices'])
-        ax[1].set_xlabel("Date")
-        ax[1].set_ylabel("Detrended Prices")
-        ax[1].set_title(f"{self.index_name} Detrended Prices")
-
-        ax[2].plot(data1['Date'], data1['EWI'])
-        ax[2].plot(data1['Date'], percentils_90, color='green', linestyle='--', label='90th percentile (bull market)')
-        ax[2].plot(data1['Date'], percentils_10, color='red', linestyle='--', label='10th percentile (bear market)')
-        ax[2].set_title("Early Warning Indicator")
-        ax[2].set_xlabel("Date")
-
-        plt.show()
-
-    def plot_stock_prices(self, name: str):
-        """
-        Plot the stock prices
-        Args:
-            name (str) : stock name
-        Return:
-            plt
-        """
-        data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
-                          pd.DataFrame(self.stocks[name], columns=['Prices'])], axis=1)
-        detrended_data = pd.concat([pd.DataFrame(self.dates, columns=['Date']),
-                                    pd.DataFrame(self.prices.detrended_prices(name),
-                                                 columns=['Detrended Prices'])], axis=1)
-
-        fig, ax = plt.subplots(2, 1, figsize=(12, 8))
-        ax[0].plot(data['Date'], data['Prices'])
-        ax[0].set_xlabel("Date")
-        ax[0].set_ylabel("Prices")
-        ax[1].plot(detrended_data['Date'], detrended_data['Detrended Prices'])
-        ax[1].set_xlabel("Date")
-        ax[1].set_ylabel("Detrended Prices")
-        plt.show()
-
-    def plot_EWI(self):
-        """
-        Plot the Early Warning Indicator
-        Return:
-            plt
-        """
-        EWI = EarlyWarningIndicator(self.dict_data, 'beta', 0.95, 750, 25)
-        dates, params, percentils_90, percentils_10 = EWI.estimation
-
-        # Create a DataFrame with the dates and the Early Warning Indicator
-        data = pd.concat([pd.DataFrame(dates, columns=['Date']), pd.DataFrame(params, columns=['EWI'])], axis=1)
-
-        # Plot the Early Warning Indicator
-        plt.figure(figsize=(12, 8))
-        plt.plot(data['Date'], data['EWI'])
-        plt.axhline(y=percentils_90, color='darkgray', linestyle='--', label='90th percentile (bull market)')
-        plt.axhline(y=percentils_10, color='lightgray', linestyle='--', label='10th percentile (bear market)')
-        plt.title("Early Warning Indicator")
-        plt.xlabel("Date")
-
-        plt.tight_layout()
-        plt.show()'''
